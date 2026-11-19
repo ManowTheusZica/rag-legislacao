@@ -1,5 +1,8 @@
 # RAG sobre o Codigo de Transito Brasileiro
 
+![CI](https://github.com/ManowTheusZica/rag-legislacao/actions/workflows/ci.yml/badge.svg) ![Python](https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white)
+
+
 Sistema de perguntas e respostas sobre a Lei 9.503/1997 (CTB). Toda resposta vem com
 o numero do artigo que a sustenta. Busca propria (BM25), sem serviço externo, com
 avaliacao medida em gabarito verificado.
