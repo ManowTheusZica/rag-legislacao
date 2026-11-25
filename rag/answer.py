@@ -57,10 +57,20 @@ def _llm(pergunta: str, trechos: list[dict]) -> str | None:
         return None
 
 
-def responder(indice: Indice, pergunta: str, limite: int = 3) -> dict:
+def responder(indice: Indice, pergunta: str, limite: int = 3,
+              score_minimo: float | None = None, cache=None) -> dict:
+    """Responde citando artigo. `score_minimo` calibra a abstencao;
+    `cache` (CacheSemantico) evita recomputar pergunta repetida."""
+    if cache is not None:
+        guardado = cache.obter(pergunta)
+        if guardado is not None:
+            return guardado
+
     achados = indice.consultar(pergunta, limite)
+    if score_minimo is not None and achados and achados[0][0] < score_minimo:
+        return {"resposta": SEM_RESPOSTA, "artigos": [], "fonte": "abaixo_do_limiar"}
     if not achados:
-        return {"resposta": SEM_RESPOSTA, "artigos": [], "fonte": "extrativo"}
+        return {"resposta": SEM_RESPOSTA, "artigos": [], "fonte": "sem_resultado"}
 
     trechos = [
         {"artigo": documento["artigo"], "score": score, "texto": documento["texto"],
@@ -70,12 +80,16 @@ def responder(indice: Indice, pergunta: str, limite: int = 3) -> dict:
 
     texto_llm = _llm(pergunta, trechos)
     if texto_llm:
-        return {"resposta": texto_llm, "artigos": trechos, "fonte": "llm+rag"}
+        resultado = {"resposta": texto_llm, "artigos": trechos, "fonte": "llm+rag"}
+    else:
+        principal = trechos[0]
+        resposta = "Art. %d do CTB: %s" % (principal["artigo"], principal["texto"][:700])
+        if len(trechos) > 1:
+            resposta += "\n\nOutros artigos relacionados: " + ", ".join(
+                "Art. %d" % t["artigo"] for t in trechos[1:]
+            )
+        resultado = {"resposta": resposta, "artigos": trechos, "fonte": "extrativo"}
 
-    principal = trechos[0]
-    resposta = "Art. %d do CTB: %s" % (principal["artigo"], principal["texto"][:700])
-    if len(trechos) > 1:
-        resposta += "\n\nOutros artigos relacionados: " + ", ".join(
-            "Art. %d" % t["artigo"] for t in trechos[1:]
-        )
-    return {"resposta": resposta, "artigos": trechos, "fonte": "extrativo"}
+    if cache is not None:
+        cache.guardar(pergunta, resultado)
+    return resultado

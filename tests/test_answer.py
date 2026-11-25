@@ -11,7 +11,7 @@ def test_resposta_cita_o_artigo(indice):
 
 def test_pergunta_sem_relacao_com_o_corpus(indice):
     resultado = responder(indice, "qual a capital da Australia")
-    assert resultado == {"resposta": SEM_RESPOSTA, "artigos": [], "fonte": "extrativo"}
+    assert resultado == {"resposta": SEM_RESPOSTA, "artigos": [], "fonte": "sem_resultado"}
 
 
 def test_fallback_quando_llm_nao_configurada(indice, monkeypatch):

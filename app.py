@@ -1,16 +1,22 @@
 """Interface web: busca por pergunta no CTB."""
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from rag.answer import responder
+from rag.cache import CacheSemantico
 from rag.corpus import carregar
 from rag.index import Indice
 
 app = FastAPI(title="RAG - Codigo de Transito Brasileiro")
+
+# limiar calibrado em scripts/benchmark.py (docs/RESULTADOS.md)
+LIMIAR = float(os.getenv("RAG_SCORE_MINIMO", "6.0"))
+CACHE = CacheSemantico(limite=int(os.getenv("RAG_CACHE_ITENS", "512")))
 
 
 @lru_cache(maxsize=1)
@@ -20,12 +26,21 @@ def indice() -> Indice:
 
 @app.get("/api/pergunta")
 def api(pergunta: str):
-    return responder(indice(), pergunta)
+    return responder(indice(), pergunta, score_minimo=LIMIAR, cache=CACHE)
+
+
+@app.get("/api/cache")
+def cache_stats():
+    return CACHE.estatisticas()
 
 
 @app.get("/", response_class=HTMLResponse)
 def pagina(pergunta: str = ""):
-    resultado = responder(indice(), pergunta) if pergunta.strip() else None
+    resultado = (
+        responder(indice(), pergunta, score_minimo=LIMIAR, cache=CACHE)
+        if pergunta.strip()
+        else None
+    )
     artigos = "".join(
         '<article><h3>Art. %d <span class="score">%.0f%%</span></h3>'
         "<p>%s</p></article>"
@@ -59,5 +74,5 @@ def pagina(pergunta: str = ""):
  value="{pergunta}" autofocus><button>Perguntar</button></form>
 <div class="resposta">{resposta or "Faca uma pergunta para comecar."}</div>
 {artigos}
-<footer>Corpus: Lei 9.503/1997 (CTB). Busca TF-IDF propria, sem servico externo.</footer>
+<footer>Corpus: Lei 9.503/1997 (CTB). Busca BM25 propria, sem servico externo. Limiar de abstencao calibrado com gabarito.</footer>
 </div></body></html>"""

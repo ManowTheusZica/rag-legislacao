@@ -17,13 +17,20 @@ uvicorn app:app --port 8020             # http://localhost:8020
 
 ## Numeros reais
 
-- Corpus: **324 artigos** unicos, quebrados em **726 trechos** de ~320 caracteres
-- Gabarito: **18 perguntas**, cada resposta conferida lendo o texto do artigo
-- Resultado da busca: **hit@1 = 83,3%**, **hit@3 = 100%**, **MRR = 0,907**
+Medidos por `python -m scripts.benchmark` (detalhe em [docs/RESULTADOS.md](docs/RESULTADOS.md)):
 
-```
-python -c "from rag.corpus import carregar; from rag.index import Indice; \
-from rag.evaluate import avaliar; print(avaliar(Indice(carregar())))"
+- Corpus: **324 artigos** unicos, **726 trechos**, indice montado em **~70 ms**
+- Gabarito: **18 perguntas** verificadas + **8 perguntas fora do escopo**
+- Busca: **hit@1 = 83,3%**, **hit@3 = 100%**, **MRR = 0,907**
+- **Citacao correta em 100%** das respostas (a resposta cita o artigo recuperado)
+- **Abstencao = 87,5%** nas perguntas fora do CTB (limiar calibrado em 6,0)
+- Latencia p50 **1,32 ms** / p95 **1,88 ms** (sem rede)
+- Custo estimado: **US$ 0,000028 por pergunta** (~US$ 0,28 por 10 mil), so contexto
+- Cache semantico: p50 cai para **0,03 ms** em pergunta repetida (66,7% de acerto)
+
+```bash
+python -m scripts.benchmark           # mede e reescreve docs/RESULTADOS.md
+python -m scripts.benchmark --json    # so' imprime
 ```
 
 ## Exemplo
@@ -44,7 +51,10 @@ crianca menor de sete anos ou que nao possa cuidar de si mesma..." com o trecho 
 4. `rag/answer.py` devolve resposta extrativa sempre citando o artigo. Se `LLM_BASE_URL`
    e `LLM_API_KEY` estiverem definidos, usa um endpoint compativel com OpenAI para
    redigir - mas so com os artigos recuperados no contexto (RAG de verdade, sem alucinar).
-5. `rag/evaluate.py` mede hit@1, hit@3 e MRR no gabarito.
+5. `rag/avaliacao.py` mede hit@1, hit@3, MRR, **citacao**, **abstencao**, latencia e
+   custo; `calibrar_limiar()` escolhe o corte de score com dado (18 boas x 8 fora do escopo).
+6. `rag/cache.py` guarda resposta por conjunto de radicais (Jaccard >= 0,85): pega
+   reformulacao da mesma pergunta e nao serve resposta de outro assunto.
 
 ## Decisoes que valem explicar em entrevista
 
@@ -57,7 +67,14 @@ crianca menor de sete anos ou que nao possa cuidar de si mesma..." com o trecho 
 - **Gabarito verificado**: cada par pergunta/artigo foi conferido no texto do corpus.
   Gabarito chutado produz metrica bonita e falsa.
 - **Sem resposta honesta**: quando nada passa do corte, o sistema diz que nao encontrou
-  em vez de inventar artigo.
+  em vez de inventar artigo. O corte nao foi chutado: `calibrar_limiar()` varre 11
+  limiares e escolhe o que retem as 18 boas e abste o maximo de negativas (6,0).
+- **Cache por radicais, nao por string**: normalizar acento/plural/sufixo faz
+  "dirigir sem cnh" e "penalidade para dirigir sem possuir cnh" virarem a mesma chave;
+  Jaccard 0,85 impede que "sinalizacao de rodovia" pegue carona em "cinto de seguranca".
+- **Custo medido, nao estimado no chute**: tokens de contexto contados por pergunta
+  (189) x preco de referencia (US$ 0,15/1M) = US$ 0,28 por 10 mil perguntas. E' o
+  numero que justifica ou nao ligar o LLM.
 
 ## Limitacoes
 
@@ -66,3 +83,8 @@ crianca menor de sete anos ou que nao possa cuidar de si mesma..." com o trecho 
 - O corpus e o texto consolidado do CTB; alteracoes recentes podem nao estar nele -
   rode `scripts/build_corpus.py` com um PDF atualizado.
 - A resposta extrativa corta em 700 caracteres; para respostas longas, configure o LLM.
+- Abstencao de 87,5% significa que 1 das 8 perguntas fora do escopo ainda recebe artigo:
+  o score BM25 nao tem escala absoluta, entao o limiar precisa ser revalidado quando o
+  corpus mudar. Esta documentado de proposito, em vez de esconder o falso positivo.
+- Cache em memoria: reiniciar o processo limpa. Para varias replicas, trocar por Redis
+  mantendo a mesma chave (frozenset de radicais).
